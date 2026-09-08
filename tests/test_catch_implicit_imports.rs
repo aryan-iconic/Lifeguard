@@ -9,9 +9,6 @@
 mod tests {
 
     use lifeguard::test_lib::*;
-    // Port over tests from safer_lazy_imports/analyzer/tests/test_catch_implicit_imports.py
-    // Kept as a conformance corpus against the original analyzer, so overlap
-    // with the topical test files is deliberate.
 
     #[test]
     fn test_catch_implicit_imports() {
@@ -970,6 +967,47 @@ mod tests {
         let modules = vec![("__main__", __main__)];
 
         let implicit_imports = Vec::new();
+        check_errors_and_implicit_imports(modules, implicit_imports);
+    }
+
+    #[test]
+    fn test_safelisted_decorator_still_records_its_import_chain() {
+        // The module names have to match a SAFE_FUNCTIONS_ARRAY entry in
+        // manual_override.rs, which is what puts this on the safelist path.
+        // Being safe to *run* says nothing about which modules evaluating the
+        // decorator has to load.
+        let consumer = r#"
+        import libfb.py.decorators
+
+        class C:
+            @libfb.py.asyncio.decorators.memoize_timed(3600)
+            async def m(self):
+                ...
+        "#;
+        let decorators = r#"
+        import libfb.py.asyncio.decorators
+        "#;
+        let asyncio_decorators = r#"
+        def memoize_timed(ttl):
+            def wrap(f):
+                return f
+            return wrap
+        "#;
+        let modules = vec![
+            ("consumer", consumer),
+            ("libfb.py.decorators", decorators),
+            ("libfb.py.asyncio.decorators", asyncio_decorators),
+            ("libfb.__init__", ""),
+            ("libfb.py.__init__", ""),
+            ("libfb.py.asyncio.__init__", ""),
+        ];
+
+        // Just the leaf module: `check_decorators` resolves the chain in one
+        // `check_attr` call, unlike the generic expression walk, which recurses
+        // and so also names each intermediate. Either is sound — importing
+        // `libfb.py.asyncio.decorators` imports its parent packages — and the
+        // callee itself is a called function, not a module.
+        let implicit_imports = vec![("consumer", vec!["libfb.py.asyncio.decorators"])];
         check_errors_and_implicit_imports(modules, implicit_imports);
     }
 }

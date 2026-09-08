@@ -1289,6 +1289,17 @@ impl<'a> SourceAnalyzer<'a> {
             if Self::is_property_decorator(call) {
                 continue;
             }
+            // Decorator expressions are not routed through the generic
+            // expression walk, so an attribute chain that crosses a submodule
+            // this module never imported would otherwise go unrecorded. Record
+            // the chain up to the module rather than the decorator itself: the
+            // decorator's own name goes into `called_functions` below, which
+            // would otherwise eliminate it as an implicit import.
+            if let Expr::Attribute(attr_expr) = call
+                && let Expr::Attribute(inner) = &*attr_expr.value
+            {
+                self.check_attr(inner, output);
+            }
             let Some(res) = self.info.resolve(&self.cursor, call) else {
                 self.check_unresolved_call(call, args, output, Some(CallKind::Decorator));
                 continue;
