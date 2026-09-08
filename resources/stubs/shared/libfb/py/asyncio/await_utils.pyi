@@ -12,3 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
+import asyncio.runners
+import contextvars
+import functools
+import inspect
+import os
+import random
+import threading
+import time
+import types
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import AbstractAsyncContextManager, contextmanager
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Coroutine,
+    Iterator,
+    Optional,
+    ParamSpec,
+    Tuple,
+    Type,
+    TypeVar,
+)
+from later import run_nested as wait_for  # noqa: F401
+if hasattr(asyncio, 'Runner'):
+    from libfb.py.asyncio.py312.magic import run as run, Runner as Runner  # noqa: F401
+else:
+    import asyncio.events
+    from later.runner import get_running_loop, pause_existing_loop

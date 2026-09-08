@@ -12,3 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import re
+import socket
+import subprocess
+from ipaddress import (
+    _BaseAddress as _BaseIP,
+    ip_address as IPAddress,
+    IPv4Address,
+    IPv6Address,
+    IPv6Network,
+)
+from types import TracebackType
+from typing import Dict, List, Optional, Tuple, Type, Union
+import libfb.py.fbwhoami as fbwhoami
+from libfb.py import getifaddrs
+from libfb.py.decorators import memoize_timed
+from libfb.py.fileutils import readfile
+from libfb.py.pyre import none_throws

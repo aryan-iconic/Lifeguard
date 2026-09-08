@@ -12,3 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import platform
+import threading
+from types import MappingProxyType
+from typing import (
+    ItemsView,
+    Iterator,
+    KeysView,
+    Mapping,
+    Optional,
+    overload,
+    TypeVar,
+    ValuesView,
+)

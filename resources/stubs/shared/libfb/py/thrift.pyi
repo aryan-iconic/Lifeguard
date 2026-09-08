@@ -12,3 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from servicerouter.sentinel import USE_ANNOTATION
+from servicerouter.srproxy import (
+    ClientParams,
+    get_local_srproxy_client,
+    get_sr_client as _get_sr_client,
+)
+try:
+    import __manifest__
+except ImportError:
+    pass
