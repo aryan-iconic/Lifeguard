@@ -50,4 +50,46 @@ mod tests {
         // `bar` doesn't.
         assert_eq!(modules, BTreeSet::from(["main", "foo"]));
     }
+
+    #[test]
+    fn test_fix_py314_matches_golden_is_idempotent_and_dry_run_is_non_mutating() {
+        let original = include_str!("e2e/fixtures/test_fixer.py");
+        let expected = include_str!("e2e/fixtures/golden_test_fixer_py314.py");
+        let other = include_str!("e2e/fixtures/other.py");
+        let tmp = populate_temp_dir(&[("proj/main.py", original), ("proj/other.py", other)]);
+        let proj = tmp.path().join("proj");
+        let output = tmp.path().join("out.json");
+
+        let fixed_args = || {
+            RunTreeArgs::try_parse_from([
+                "run-tree",
+                proj.to_str().unwrap(),
+                output.to_str().unwrap(),
+                "--fix",
+                "--target-version",
+                "3.14",
+            ])
+            .unwrap()
+        };
+        run(fixed_args()).unwrap();
+        let main = proj.join("main.py");
+        assert_eq!(fs::read_to_string(&main).unwrap(), expected);
+
+        // An existing declaration must be left alone on subsequent runs.
+        run(fixed_args()).unwrap();
+        assert_eq!(fs::read_to_string(&main).unwrap(), expected);
+
+        fs::write(&main, original).unwrap();
+        let dry_run_args = RunTreeArgs::try_parse_from([
+            "run-tree",
+            proj.to_str().unwrap(),
+            output.to_str().unwrap(),
+            "--dry-run",
+            "--target-version",
+            "3.14",
+        ])
+        .unwrap();
+        run(dry_run_args).unwrap();
+        assert_eq!(fs::read_to_string(&main).unwrap(), original);
+    }
 }

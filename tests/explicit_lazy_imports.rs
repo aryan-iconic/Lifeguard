@@ -23,7 +23,7 @@ mod tests {
     fn side_effect_imports(modules: Vec<(&str, &str)>) -> Vec<(ModuleName, AHashSet<ModuleName>)> {
         let sources = TestSources::new_with_version(&modules, py315());
         let config = AnalysisConfig::with_python_version(py315(), None);
-        let (import_graph, exports, in_scope) = ImportGraph::make_with_exports(&sources, &config);
+        let (import_graph, exports, in_scope, _) = ImportGraph::make_with_exports(&sources, &config);
         let output = project::run_analysis(
             &sources,
             &exports,
