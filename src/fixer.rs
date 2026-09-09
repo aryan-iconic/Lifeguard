@@ -5,6 +5,7 @@ use anyhow::Result;
 use pyrefly_python::module_name::ModuleName;
 
 use crate::hasher::AHashMap;
+use crate::hasher::AHashSet;
 use crate::imports::ImportOccurrence;
 use crate::output::LifeGuardAnalysis;
 use crate::source_map::Sources;
@@ -113,11 +114,26 @@ pub fn generate_and_apply_fixes(
             None => continue, // Cannot edit builtins or missing files.
         };
 
-        // 2. Filter eligible occurrences.
-        // The target module must be a key in `lazy_eligible`.
+        // 2. Filter eligible occurrences. A `lazy` keyword applies to the
+        // entire statement, so skip a statement if any of its imported names
+        // is ineligible or it is already lazy.
+        let blocked_offsets: AHashSet<u32> = if target_version == TargetVersion::Py315 {
+            occurrences
+                .iter()
+                .filter(|occ| {
+                    occ.is_lazy || !analysis.output.lazy_eligible.contains_key(&occ.target)
+                })
+                .map(|occ| u32::from(occ.offset))
+                .collect()
+        } else {
+            AHashSet::default()
+        };
         let mut eligible_occurrences = Vec::new();
         for occ in occurrences {
-            if analysis.output.lazy_eligible.contains_key(&occ.target) {
+            if !(target_version == TargetVersion::Py315
+                && (occ.is_lazy || blocked_offsets.contains(&u32::from(occ.offset))))
+                && analysis.output.lazy_eligible.contains_key(&occ.target)
+            {
                 eligible_occurrences.push(occ);
             }
         }
@@ -234,16 +250,19 @@ mod tests {
                 target: ModuleName::from_str("alpha"),
                 offset: TextSize::from(7),
                 is_import_from: false,
+                is_lazy: false,
             },
             ImportOccurrence {
                 target: ModuleName::from_str("beta"),
                 offset: TextSize::from(7),
                 is_import_from: false,
+                is_lazy: false,
             },
             ImportOccurrence {
                 target: ModuleName::from_str("gamma"),
                 offset: TextSize::from(25),
                 is_import_from: true,
+                is_lazy: false,
             },
         ];
         let refs = occurrences.iter().collect::<Vec<_>>();
@@ -270,11 +289,13 @@ mod tests {
                 target: ModuleName::from_str("zebra"),
                 offset: TextSize::from(20),
                 is_import_from: false,
+                is_lazy: false,
             },
             ImportOccurrence {
                 target: ModuleName::from_str("apple"),
                 offset: TextSize::from(10),
                 is_import_from: true,
+                is_lazy: false,
             },
         ];
         let refs = occurrences.iter().collect::<Vec<_>>();

@@ -92,4 +92,58 @@ mod tests {
         run(dry_run_args).unwrap();
         assert_eq!(fs::read_to_string(&main).unwrap(), original);
     }
+
+    #[test]
+    fn test_fix_py315_matches_golden_and_is_idempotent() {
+        let original = include_str!("e2e/fixtures/test_fixer_py315.py");
+        let expected = include_str!("e2e/fixtures/golden_test_fixer_py315.py");
+        let other = include_str!("e2e/fixtures/other.py");
+        let tmp = populate_temp_dir(&[("proj/main.py", original), ("proj/other.py", other)]);
+        let proj = tmp.path().join("proj");
+        let output = tmp.path().join("out.json");
+
+        let fixed_args = || {
+            RunTreeArgs::try_parse_from([
+                "run-tree",
+                proj.to_str().unwrap(),
+                output.to_str().unwrap(),
+                "--fix",
+                "--target-version",
+                "3.15",
+            ])
+            .unwrap()
+        };
+        run(fixed_args()).unwrap();
+        let main = proj.join("main.py");
+        assert_eq!(fs::read_to_string(&main).unwrap(), expected);
+
+        run(fixed_args()).unwrap();
+        assert_eq!(fs::read_to_string(&main).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_fix_py315_skips_mixed_eligibility_import_statements() {
+        let source = "import safe, unsafe\n";
+        let tmp = populate_temp_dir(&[
+            ("proj/main.py", source),
+            ("proj/safe.py", "value = 1\n"),
+            // `exec` is a Lifeguard load-imports-eagerly trigger, so unlike
+            // `safe`, `unsafe` is absent from `lazy_eligible`.
+            ("proj/unsafe.py", "exec('value = 1')\n"),
+        ]);
+        let proj = tmp.path().join("proj");
+        let output = tmp.path().join("out.json");
+        let args = RunTreeArgs::try_parse_from([
+            "run-tree",
+            proj.to_str().unwrap(),
+            output.to_str().unwrap(),
+            "--fix",
+            "--target-version",
+            "3.15",
+        ])
+        .unwrap();
+
+        run(args).unwrap();
+        assert_eq!(fs::read_to_string(proj.join("main.py")).unwrap(), source);
+    }
 }

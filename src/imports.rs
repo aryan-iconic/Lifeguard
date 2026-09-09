@@ -302,6 +302,7 @@ pub struct ImportOccurrence {
     pub target: ModuleName,
     pub offset: TextSize,
     pub is_import_from: bool,
+    pub is_lazy: bool,
 }
 
 struct ModuleImportCollector<'a> {
@@ -408,6 +409,7 @@ impl<'a> ModuleImportCollector<'a> {
                 target: imp,
                 offset: import.range().start(),
                 is_import_from: false,
+                is_lazy: import.is_lazy,
             });
         }
     }
@@ -425,13 +427,24 @@ impl<'a> ModuleImportCollector<'a> {
             }
 
             for name in &import.names {
-                self.import_from_single(parent, &name.name.id, import.range().start());
+                self.import_from_single(
+                    parent,
+                    &name.name.id,
+                    import.range().start(),
+                    import.is_lazy,
+                );
             }
         }
     }
 
     // Helper for `import_from`, handles a single import in `from parent import a, b, ...`
-    fn import_from_single(&mut self, parent: ModuleName, name: &Name, offset: TextSize) {
+    fn import_from_single(
+        &mut self,
+        parent: ModuleName,
+        name: &Name,
+        offset: TextSize,
+        is_lazy: bool,
+    ) {
         if parent.as_str() == "importlib" && *name == "import_module" {
             self.has_import_module = true;
         }
@@ -452,6 +465,7 @@ impl<'a> ModuleImportCollector<'a> {
                 target: maybe_sub,
                 offset,
                 is_import_from: true,
+                is_lazy,
             });
         } else {
             // Parent is in graph but child is not. Could be an attribute
