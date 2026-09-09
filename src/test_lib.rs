@@ -432,7 +432,7 @@ fn output_mismatch(
     config: AnalysisConfig,
 ) -> Option<String> {
     let sources = TestSources::new(&modules);
-    let (import_graph, exports, in_scope, _) = ImportGraph::make_with_exports(&sources, &config);
+    let (import_graph, exports, in_scope) = ImportGraph::make_with_exports(&sources, &config);
 
     let safety_map = match check {
         Check::Errors => {
@@ -707,7 +707,7 @@ where
 pub fn analyze_tree(modules: &Vec<(&str, &str)>) -> AnalysisMap {
     let sources = TestSources::new(modules);
     let config = AnalysisConfig::default();
-    let (import_graph, exports, in_scope, _) = ImportGraph::make_with_exports(&sources, &config);
+    let (import_graph, exports, in_scope) = ImportGraph::make_with_exports(&sources, &config);
     project::analyze_all(&sources, &exports, &import_graph, &config, &in_scope).0
 }
 
@@ -744,7 +744,7 @@ pub fn verbose_test_options() -> Options {
 /// to inject parse errors.
 pub fn run_analysis_on(sources: &TestSources) -> (AnalysisOutput, ImportGraph, Exports) {
     let config = AnalysisConfig::default();
-    let (import_graph, exports, in_scope, _) = ImportGraph::make_with_exports(sources, &config);
+    let (import_graph, exports, in_scope) = ImportGraph::make_with_exports(sources, &config);
     let output = project::run_analysis(
         sources,
         &exports,

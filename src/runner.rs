@@ -124,9 +124,10 @@ fn run_local_pipeline(
         Sources::new_with_version(src_map, root_dir.to_path_buf(), options.python_version)
     });
 
-    let (import_graph, exports, in_scope, occurrences) = time("Creating import graph and exports", || {
-        ImportGraph::make_with_exports(&sources, &config)
-    });
+    let (import_graph, exports, in_scope, occurrences) =
+        time("Creating import graph and exports", || {
+            ImportGraph::make_with_exports_and_occurrences(&sources, &config)
+        });
     report_memory("After creating import graph and exports");
 
     let output = time("Analyzing AST", || {
@@ -199,7 +200,11 @@ pub fn process_source_map(
     src_map: SourceMap,
     root_dir: &std::path::Path,
     options: &Options,
-) -> Result<(LifeGuardAnalysis, crate::hasher::AHashMap<ModuleName, Vec<ImportOccurrence>>, Sources)> {
+) -> Result<(
+    LifeGuardAnalysis,
+    crate::hasher::AHashMap<ModuleName, Vec<ImportOccurrence>>,
+    Sources,
+)> {
     let result = analyze_whole_program(src_map, root_dir, options)?;
     let WholeProgramFacts {
         sources,

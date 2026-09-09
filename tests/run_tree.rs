@@ -86,6 +86,19 @@ mod tests {
             output.to_str().unwrap(),
             "--dry-run",
             "--target-version",
+            "3.15",
+        ])
+        .unwrap();
+        run(dry_run_args).unwrap();
+        assert_eq!(fs::read_to_string(&main).unwrap(), original);
+
+        fs::write(&main, original).unwrap();
+        let dry_run_args = RunTreeArgs::try_parse_from([
+            "run-tree",
+            proj.to_str().unwrap(),
+            output.to_str().unwrap(),
+            "--dry-run",
+            "--target-version",
             "3.14",
         ])
         .unwrap();
@@ -145,5 +158,32 @@ mod tests {
 
         run(args).unwrap();
         assert_eq!(fs::read_to_string(proj.join("main.py")).unwrap(), source);
+    }
+
+    #[test]
+    fn test_fix_py315_handles_conditional_and_multiline_imports() {
+        let source = "if True:\n    import other\n\nfrom package import (\n    member,\n)\n";
+        let expected =
+            "if True:\n    lazy import other\n\nlazy from package import (\n    member,\n)\n";
+        let tmp = populate_temp_dir(&[
+            ("proj/main.py", source),
+            ("proj/other.py", "def value():\n    return 1\n"),
+            ("proj/package/__init__.py", ""),
+            ("proj/package/member.py", "value = 1\n"),
+        ]);
+        let proj = tmp.path().join("proj");
+        let output = tmp.path().join("out.json");
+        let args = RunTreeArgs::try_parse_from([
+            "run-tree",
+            proj.to_str().unwrap(),
+            output.to_str().unwrap(),
+            "--fix",
+            "--target-version",
+            "3.15",
+        ])
+        .unwrap();
+
+        run(args).unwrap();
+        assert_eq!(fs::read_to_string(proj.join("main.py")).unwrap(), expected);
     }
 }

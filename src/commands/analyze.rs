@@ -92,7 +92,7 @@ pub fn run(args: AnalyzeArgs) -> Result<()> {
         python_version,
     };
 
-    let (lifeguard_output, _occurrences, _sources) = process_source_map(src_map, &root_dir, &options)?;
+    let (lifeguard_output, _, _) = process_source_map(src_map, &root_dir, &options)?;
 
     if let Some(buck_target) = args.buck_target {
         println!("--- Lifeguard Analysis for {} ---", buck_target);

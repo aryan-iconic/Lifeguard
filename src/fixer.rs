@@ -145,7 +145,10 @@ pub fn generate_and_apply_fixes(
         let content = match target_version {
             TargetVersion::Py314 => match fs::read_to_string(&path) {
                 Ok(content) => Some(content),
-                Err(_) => continue,
+                Err(error) => {
+                    eprintln!("Failed to read {} for fixes: {error}", path.display());
+                    continue;
+                }
             },
             TargetVersion::Py315 => None,
         };

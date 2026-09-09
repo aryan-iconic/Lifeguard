@@ -127,7 +127,7 @@ Set.register(MyContainer)
         ];
         let sources = TestSources::new_with_stubs(&modules, &["b"]);
         let config = AnalysisConfig::default();
-        let (import_graph, exports, in_scope, _) = ImportGraph::make_with_exports(&sources, &config);
+        let (import_graph, exports, in_scope) = ImportGraph::make_with_exports(&sources, &config);
         let result = project::run_analysis(
             &sources,
             &exports,

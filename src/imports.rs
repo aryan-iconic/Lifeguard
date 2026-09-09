@@ -211,6 +211,18 @@ impl ImportGraph {
     pub fn make_with_exports(
         sources: &impl ModuleProvider,
         config: &AnalysisConfig,
+    ) -> (Self, Exports, AHashSet<ModuleName>) {
+        let (graph, exports, in_scope, _) =
+            Self::make_with_exports_and_occurrences(sources, config);
+        (graph, exports, in_scope)
+    }
+
+    /// Build an import graph and exports while retaining source locations for
+    /// internal edit generation. Keep `make_with_exports` stable for library
+    /// consumers that do not need source-edit metadata.
+    pub(crate) fn make_with_exports_and_occurrences(
+        sources: &impl ModuleProvider,
+        config: &AnalysisConfig,
     ) -> (
         Self,
         Exports,
@@ -704,7 +716,8 @@ mod tests {
         sources.extend_from_slice(modules);
         let sources = TestSources::new(&sources);
         let config = AnalysisConfig::default();
-        let (_, _, _, mut occurrences) = ImportGraph::make_with_exports(&sources, &config);
+        let (_, _, _, mut occurrences) =
+            ImportGraph::make_with_exports_and_occurrences(&sources, &config);
         occurrences.remove(&ModuleName::from_str("main")).unwrap()
     }
 
