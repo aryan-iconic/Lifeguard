@@ -17,6 +17,7 @@ use crate::cache::ConstructorCallees;
 use crate::config::AnalysisConfig;
 use crate::debug::report_memory;
 use crate::imports::ImportGraph;
+use crate::imports::ImportOccurrence;
 use crate::module_safety;
 use crate::output::LifeGuardAnalysis;
 use crate::output::write_verbose;
@@ -94,6 +95,7 @@ pub struct WholeProgramFacts {
     pub side_effect_imports: project::SideEffectMap,
     pub class_bases: Vec<(ModuleName, Vec<ModuleName>)>,
     pub constructor_callees: Vec<(ModuleName, ConstructorCallees)>,
+    pub occurrences: crate::hasher::AHashMap<ModuleName, Vec<ImportOccurrence>>,
 }
 
 /// Provisional per-library facts serialized by the incremental map phase.
@@ -122,7 +124,7 @@ fn run_local_pipeline(
         Sources::new_with_version(src_map, root_dir.to_path_buf(), options.python_version)
     });
 
-    let (import_graph, exports, in_scope) = time("Creating import graph and exports", || {
+    let (import_graph, exports, in_scope, occurrences) = time("Creating import graph and exports", || {
         ImportGraph::make_with_exports(&sources, &config)
     });
     report_memory("After creating import graph and exports");
@@ -151,6 +153,7 @@ fn run_local_pipeline(
         side_effect_imports: output.side_effect_imports,
         class_bases: output.class_bases,
         constructor_callees: output.constructor_callees,
+        occurrences,
     })
 }
 
@@ -179,6 +182,7 @@ pub fn analyze_library(
         side_effect_imports,
         class_bases,
         constructor_callees,
+        occurrences: _,
     } = run_local_pipeline(src_map, root_dir, ExecutionMode::Incremental, options)?;
     Ok(LibraryAnalysisFacts {
         safety_map,
@@ -195,7 +199,7 @@ pub fn process_source_map(
     src_map: SourceMap,
     root_dir: &std::path::Path,
     options: &Options,
-) -> Result<LifeGuardAnalysis> {
+) -> Result<(LifeGuardAnalysis, crate::hasher::AHashMap<ModuleName, Vec<ImportOccurrence>>, Sources)> {
     let result = analyze_whole_program(src_map, root_dir, options)?;
     let WholeProgramFacts {
         sources,
@@ -205,6 +209,7 @@ pub fn process_source_map(
         side_effect_imports,
         class_bases: _,
         constructor_callees: _,
+        occurrences,
     } = result;
 
     if let Some(out) = &options.verbose_output_path {
@@ -227,5 +232,5 @@ pub fn process_source_map(
     // Skip deallocation of large data structures since the process is about to exit.
     std::mem::forget(exports);
 
-    Ok(lifeguard_output)
+    Ok((lifeguard_output, occurrences, sources))
 }

@@ -21,6 +21,7 @@ use crate::runner::parse_python_version;
 use crate::runner::process_source_map;
 use crate::tracing::ProcessTimer;
 use crate::tracing::time;
+use crate::fixer::{generate_and_apply_fixes, TargetVersion};
 
 #[derive(Parser)]
 pub struct RunTreeArgs {
@@ -52,6 +53,18 @@ pub struct RunTreeArgs {
     /// Python version to use for parsing
     #[arg(long = "python-version", default_value = DEFAULT_PYTHON_VERSION)]
     python_version: String,
+
+    /// Automatically fix eligible imports
+    #[arg(long = "fix", default_value_t = false, action = ArgAction::SetTrue)]
+    fix: bool,
+
+    /// Print proposed fixes to stdout without writing them
+    #[arg(long = "dry-run", default_value_t = false, action = ArgAction::SetTrue)]
+    dry_run: bool,
+
+    /// Target Python version for the fix strategy (3.14 or 3.15)
+    #[arg(long = "target-version", default_value = "3.15")]
+    target_version: String,
 }
 
 pub fn run(args: RunTreeArgs) -> Result<()> {
@@ -78,7 +91,7 @@ pub fn run(args: RunTreeArgs) -> Result<()> {
         python_version,
     };
 
-    let lifeguard_output = process_source_map(source_map, &cwd, &options)?;
+    let (lifeguard_output, occurrences, sources) = process_source_map(source_map, &cwd, &options)?;
 
     println!(
         "--- Lifeguard Analysis for {} ---",
@@ -96,6 +109,22 @@ pub fn run(args: RunTreeArgs) -> Result<()> {
     write_json_pretty(&args.output_path, &lifeguard_output.output)?;
 
     println!("Output written to {}", args.output_path.display());
+
+    if args.fix || args.dry_run {
+        let target_version = match args.target_version.as_str() {
+            "3.14" => TargetVersion::Py314,
+            "3.15" => TargetVersion::Py315,
+            v => anyhow::bail!("Unsupported target version for --fix: {}. Must be 3.14 or 3.15", v),
+        };
+        generate_and_apply_fixes(
+            &lifeguard_output,
+            &occurrences,
+            &sources,
+            target_version,
+            args.dry_run,
+        )?;
+    }
+
     timer.report_finish();
     Ok(())
 }

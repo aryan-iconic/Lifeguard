@@ -310,6 +310,15 @@ impl Sources {
             python_version,
         }
     }
+
+    /// Gets the absolute path to a file-backed module, or None if it's a stub or missing.
+    pub fn get_source_path(&self, name: &ModuleName) -> Option<PathBuf> {
+        let info = self.info_map.get(name)?;
+        match &info.backing {
+            SourceBacking::File(path) => Some(self.root_dir.join(path)),
+            SourceBacking::Stub => None,
+        }
+    }
 }
 
 /// A [`Sources`] over the bundled stubs alone. With no source DB every module

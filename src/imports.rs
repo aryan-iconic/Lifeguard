@@ -19,6 +19,8 @@ use ruff_python_ast::StmtIf;
 use ruff_python_ast::StmtImport;
 use ruff_python_ast::StmtImportFrom;
 use ruff_python_ast::name::Name;
+use ruff_text_size::Ranged;
+use ruff_text_size::TextSize;
 
 use crate::config::AnalysisConfig;
 use crate::exports::Exports;
@@ -209,7 +211,12 @@ impl ImportGraph {
     pub fn make_with_exports(
         sources: &impl ModuleProvider,
         config: &AnalysisConfig,
-    ) -> (Self, Exports, AHashSet<ModuleName>) {
+    ) -> (
+        Self,
+        Exports,
+        AHashSet<ModuleName>,
+        AHashMap<ModuleName, Vec<ImportOccurrence>>,
+    ) {
         ImportGraphBuilder::with_capacity(sources.len(), config).build_with_exports(sources)
     }
 
@@ -290,6 +297,13 @@ pub fn resolve_to_known_module(
 
 type Imports = AHashSet<ModuleName>;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportOccurrence {
+    pub target: ModuleName,
+    pub offset: TextSize,
+    pub is_import_from: bool,
+}
+
 struct ModuleImportCollector<'a> {
     module: ModuleName,
     is_init: bool,
@@ -299,6 +313,7 @@ struct ModuleImportCollector<'a> {
     ambiguous_imports: Imports,
     has_importlib: bool,
     has_import_module: bool,
+    occurrences: Vec<ImportOccurrence>,
 }
 
 impl<'a> ModuleImportCollector<'a> {
@@ -317,12 +332,13 @@ impl<'a> ModuleImportCollector<'a> {
             ambiguous_imports: Imports::new(),
             has_importlib: false,
             has_import_module: false,
+            occurrences: Vec::new(),
         }
     }
 
-    fn collect(mut self, ast: &ModModule) -> (Imports, Imports) {
+    fn collect(mut self, ast: &ModModule) -> (Imports, Imports, Vec<ImportOccurrence>) {
         self.stmts(&ast.body);
-        (self.imports, self.ambiguous_imports)
+        (self.imports, self.ambiguous_imports, self.occurrences)
     }
 
     fn if_(&mut self, s: &StmtIf) {
@@ -388,6 +404,11 @@ impl<'a> ModuleImportCollector<'a> {
                 }
             }
             self.imports.insert(imp);
+            self.occurrences.push(ImportOccurrence {
+                target: imp,
+                offset: import.range().start(),
+                is_import_from: false,
+            });
         }
     }
 
@@ -404,13 +425,13 @@ impl<'a> ModuleImportCollector<'a> {
             }
 
             for name in &import.names {
-                self.import_from_single(parent, &name.name.id);
+                self.import_from_single(parent, &name.name.id, import.range().start());
             }
         }
     }
 
     // Helper for `import_from`, handles a single import in `from parent import a, b, ...`
-    fn import_from_single(&mut self, parent: ModuleName, name: &Name) {
+    fn import_from_single(&mut self, parent: ModuleName, name: &Name, offset: TextSize) {
         if parent.as_str() == "importlib" && *name == "import_module" {
             self.has_import_module = true;
         }
@@ -427,6 +448,11 @@ impl<'a> ModuleImportCollector<'a> {
 
         if self.graph.contains(&maybe_sub) || !self.graph.contains(&parent) {
             self.imports.insert(maybe_sub);
+            self.occurrences.push(ImportOccurrence {
+                target: maybe_sub,
+                offset,
+                is_import_from: true,
+            });
         } else {
             // Parent is in graph but child is not. Could be an attribute
             // of the parent or a submodule defined in a different library.
@@ -440,6 +466,7 @@ struct CollectedImports {
     module: ModuleName,
     imports: Imports,
     ambiguous: Imports,
+    pub occurrences: Vec<ImportOccurrence>,
 }
 
 struct ImportGraphBuilder<'a> {
@@ -470,11 +497,12 @@ impl<'a> ImportGraphBuilder<'a> {
 
     fn collect_imports(&self, name: ModuleName, module: &ParsedModule) -> CollectedImports {
         let collector = ModuleImportCollector::new(name, module.is_init, &self.graph, self.config);
-        let (imports, ambiguous) = collector.collect(&module.ast);
+        let (imports, ambiguous, occurrences) = collector.collect(&module.ast);
         CollectedImports {
             module: name,
             imports,
             ambiguous,
+            occurrences,
         }
     }
 
@@ -560,7 +588,12 @@ impl<'a> ImportGraphBuilder<'a> {
     fn build_with_exports(
         mut self,
         sources: &impl ModuleProvider,
-    ) -> (ImportGraph, Exports, AHashSet<ModuleName>) {
+    ) -> (
+        ImportGraph,
+        Exports,
+        AHashSet<ModuleName>,
+        AHashMap<ModuleName, Vec<ImportOccurrence>>,
+    ) {
         self.add_nodes(sources.module_names_iter());
 
         // Every bundled stub stays a graph node, so import classification and
@@ -629,6 +662,10 @@ impl<'a> ImportGraphBuilder<'a> {
         self.remove_unparseable_nodes(unparseable);
 
         let (all_imports, all_exports): (Vec<_>, Vec<_>) = successes.into_iter().unzip();
+        let occurrences_map = all_imports
+            .iter()
+            .map(|c| (c.module, c.occurrences.clone()))
+            .collect();
         let import_graph = self.add_edges_and_finish(all_imports);
 
         let mut merged_exports = time("  Merging exports", || Exports::merge_all(all_exports));
@@ -639,6 +676,57 @@ impl<'a> ImportGraphBuilder<'a> {
             merged_exports.expand_star_re_exports(&import_graph)
         });
 
-        (import_graph, merged_exports, reached)
+        (import_graph, merged_exports, reached, occurrences_map)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_lib::TestSources;
+
+    fn occurrences_for(code: &str, modules: &[(&str, &str)]) -> Vec<ImportOccurrence> {
+        let mut sources = vec![("main", code)];
+        sources.extend_from_slice(modules);
+        let sources = TestSources::new(&sources);
+        let config = AnalysisConfig::default();
+        let (_, _, _, mut occurrences) = ImportGraph::make_with_exports(&sources, &config);
+        occurrences.remove(&ModuleName::from_str("main")).unwrap()
+    }
+
+    #[test]
+    fn tracks_offsets_for_single_and_repeated_imports() {
+        let code = "# leading comment\nimport alpha\nimport alpha\n";
+        let occurrences = occurrences_for(code, &[("alpha", "")]);
+
+        assert_eq!(occurrences.len(), 2);
+        assert!(
+            occurrences
+                .iter()
+                .all(|occ| occ.target == ModuleName::from_str("alpha"))
+        );
+        assert!(occurrences.iter().all(|occ| !occ.is_import_from));
+        assert_eq!(
+            u32::from(occurrences[0].offset) as usize,
+            code.find("import alpha").unwrap()
+        );
+        assert_eq!(
+            u32::from(occurrences[1].offset) as usize,
+            code.rfind("import alpha").unwrap()
+        );
+    }
+
+    #[test]
+    fn tracks_from_import_at_the_statement_offset() {
+        let code = "from package import member\n";
+        let occurrences = occurrences_for(code, &[("package", ""), ("package.member", "")]);
+
+        assert_eq!(occurrences.len(), 1);
+        assert_eq!(
+            occurrences[0].target,
+            ModuleName::from_str("package.member")
+        );
+        assert!(occurrences[0].is_import_from);
+        assert_eq!(u32::from(occurrences[0].offset), 0);
     }
 }
